@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <title>회원가입</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <link rel="icon" type="image/x-icon" href="data:image/x-icon;,">
+</head>
+<body class="bg-gray-50">
+<div class="min-h-screen flex items-center justify-center">
+    <div class="max-w-md w-full space-y-8 p-8 bg-white rounded-lg shadow">
+        <h2 class="text-center text-3xl font-bold">회원가입</h2>
+        <form id="signupForm" class="space-y-6">
+            <div>
+                <input type="email" id="email"
+                       placeholder="이메일"
+                       class="w-full p-2 border rounded">
+            </div>
+            <div>
+                <input type="password" id="password"
+                       placeholder="비밀번호"
+                       class="w-full p-2 border rounded">
+            </div>
+            <button type="submit"
+                    class="w-full py-2 px-4 bg-blue-500 text-white rounded hover:bg-blue-600">
+                회원가입
+            </button>
+        </form>
+        <div class="text-center">
+            <a href="/login" class="text-blue-500 hover:text-blue-600">로그인 페이지로 이동</a>
+        </div>
+    </div>
+</div>
+
+<script>
+    function getToken() {
+        const token = localStorage.getItem('token');
+        console.log('Current token:', token);
+        return token;
+    }
+
+    document.getElementById('signupForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        console.log('회원가입 시도...');
+
+        const email = document.getElementById('email').value;
+        const password = document.getElementById('password').value;
+
+        console.log('입력된 데이터:', { email, password: '***' });
+
+        try {
+            console.log('회원가입 API 호출 시작');
+            const response = await fetch('/api/v1/auth/signup', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    email: email,
+                    password: password
+                })
+            });
+
+            console.log('API 응답 상태:', response.status);
+
+            if (response.ok) {
+                console.log('회원가입 성공');
+                // 회원가입 성공 시 자동 로그인 시도
+                const loginResponse = await fetch('/api/v1/auth/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${getToken()}`
+                    },
+                    body: JSON.stringify({
+                        email: email,
+                        password: password
+                    })
+                });
+
+                if (loginResponse.ok) {
+                    const loginData = await loginResponse.json();
+                    localStorage.setItem('token', loginData.accessToken);
+
+                    // 인증된 상태로 products 페이지 요청
+                    const productsResponse = await fetch('/products', {
+                        headers: {
+                            'Authorization': `Bearer ${loginData.accessToken}`
+                        }
+                    });
+
+                    if (productsResponse.ok) {
+                        window.location.href = '/products';
+                    } else {
+                        console.error('Products page access failed');
+                        alert('상품 페이지 접근에 실패했습니다.');
+                    }
+                } else {
+                    window.location.href = '/login'; // 자동 로그인 실패 시 로그인 페이지로 이동
+                }
+            } else {
+                console.error('회원가입 실패');
+                const errorData = await response.json();
+                console.error('에러 데이터:', errorData);
+                alert(errorData.message || '회원가입에 실패했습니다.');
+            }
+        } catch (error) {
+            console.error('API 호출 중 에러 발생:', error);
+            alert('서버 오류가 발생했습니다.');
+        }
+    });
+
+    // 페이지 로드 시 토큰 확인
+    document.addEventListener('DOMContentLoaded', () => {
+        console.log('페이지 로드, 현재 토큰:', getToken());
+    });
+</script>
+</body>
+</html>

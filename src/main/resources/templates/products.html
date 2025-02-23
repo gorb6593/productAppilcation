@@ -1,0 +1,684 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <link rel="icon" href="data:,">
+    <title>상품 관리</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+</head>
+<body class="bg-gray-50">
+<script>
+    if (!localStorage.getItem('token')) {
+        window.location.href = '/login';
+    }
+</script>
+
+<nav class="bg-gray-800 text-white p-4">
+    <div class="container mx-auto flex justify-between items-center">
+        <h1 class="text-xl font-bold">상품 관리</h1>
+        <div class="flex gap-4">
+            <button onclick="showCreateModal()"
+                    class="px-4 py-2 bg-green-500 rounded hover:bg-green-600">
+                상품 등록
+            </button>
+            <button onclick="logout()"
+                    class="px-4 py-2 bg-red-500 rounded hover:bg-red-600">
+                로그아웃
+            </button>
+        </div>
+    </div>
+</nav>
+
+<div class="container mx-auto p-4">
+    <div id="productList" class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <!-- 상품들이 여기에 동적으로 추가됩니다 -->
+    </div>
+
+    <div class="mt-6 flex justify-center gap-2" id="pagination"></div>
+</div>
+
+<!-- 상품 모달 -->
+<div id="productModal" class="hidden fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto">
+    <div class="flex items-center justify-center min-h-screen px-4">
+        <div class="bg-white p-6 rounded-lg shadow-lg w-full max-w-2xl">
+            <h2 id="modalTitle" class="text-xl font-bold mb-4">상품 등록</h2>
+            <form id="productForm" class="space-y-4" novalidate>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">상품명*</label>
+                        <input type="text" id="productName" required class="mt-1 w-full p-2 border rounded">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">가격*</label>
+                        <input type="number" id="productPrice" required class="mt-1 w-full p-2 border rounded" min="0" step="1">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">배송비*</label>
+                        <input type="number" id="deliveryFee" required class="mt-1 w-full p-2 border rounded" min="0" step="1">
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">설명</label>
+                    <textarea id="productDescription" class="mt-1 w-full p-2 border rounded" rows="3"></textarea>
+                </div>
+
+                <!-- 옵션 섹션 -->
+                <div class="border-t pt-4">
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="text-lg font-medium">상품 옵션</h3>
+                        <button type="button" onclick="addOption()"
+                                class="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600">
+                            옵션 추가
+                        </button>
+                    </div>
+                    <div id="optionsList" class="space-y-4">
+                        <!-- 옵션들이 여기에 동적으로 추가됩니다 -->
+                    </div>
+                </div>
+
+                <div class="flex justify-end gap-2 pt-4 border-t">
+                    <button type="button" onclick="closeModal()"
+                            class="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600">
+                        취소
+                    </button>
+                    <button type="submit"
+                            class="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">
+                        저장
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+    let currentPage = 0;
+    let totalPages = 0;
+    let editingProductId = null;
+
+    document.addEventListener('DOMContentLoaded', () => {
+        fetchProducts(0);
+    });
+
+    async function fetchProducts(page) {
+        const token = localStorage.getItem('token');
+        if (!token) {
+            window.location.href = '/login';
+            return;
+        }
+
+        try {
+            const response = await fetch(`/api/v1/products?page=${page}`, {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                console.log('받아온 데이터:', data)
+                currentPage = page;
+                totalPages = data.totalPages;
+                renderProducts(data.content);
+                renderPagination(data);
+            } else {
+                if (response.status === 401 || response.status === 403) {
+                    window.location.href = '/login';
+                } else {
+                    throw new Error('상품 목록을 불러오는데 실패했습니다.');
+                }
+            }
+        } catch (error) {
+            console.error('Error:', error);
+            alert(error.message);
+        }
+    }
+
+    function renderProducts(products) {
+        const productList = document.getElementById('productList');
+        productList.innerHTML = '';
+
+        products.forEach(product => {
+            // 옵션 버튼 HTML 결정
+            const optionButtonHtml = product.options && product.options.length > 0
+                ? `<button onclick="viewOptions(${product.productId})"
+                       class="px-3 py-1 bg-green-500 text-white rounded hover:bg-green-600">
+                   옵션 보기
+               </button>`
+                : `<button onclick="showOptionsModal(${product.productId})"
+                       class="px-3 py-1 bg-yellow-500 text-white rounded hover:bg-yellow-600">
+                   옵션 추가
+               </button>`;
+
+            productList.innerHTML += `
+            <div class="border p-4 rounded shadow" data-product-id="${product.productId}">
+                <h2 class="text-xl font-semibold product-name">${product.name}</h2>
+                <p class="text-gray-600 product-description">${product.description || ''}</p>
+                <div class="mt-2">
+                    <p class="font-bold product-price" data-price="${product.price}">
+                        가격: ${Number(product.price).toLocaleString()}원
+                    </p>
+                    <p class="text-sm text-gray-500 product-delivery-fee" data-fee="${product.deliveryFee}">
+                        배송비: ${Number(product.deliveryFee).toLocaleString()}원
+                    </p>
+                </div>
+                <div class="mt-4 flex justify-end gap-2">
+                    ${optionButtonHtml}
+                    <button onclick="editProduct(${product.productId})"
+                            class="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600">
+                        수정
+                    </button>
+                    <button onclick="deleteProduct(${product.productId})"
+                            class="px-3 py-1 bg-red-500 text-white rounded hover:bg-red-600">
+                        삭제
+                    </button>
+                </div>
+            </div>
+        `;
+        });
+    }
+
+    function renderPagination(data) {
+        const pagination = document.getElementById('pagination');
+        pagination.innerHTML = '';
+
+        if (data.totalElements === 0) return;
+
+        // 이전 페이지 버튼
+        if (!data.first) {
+            pagination.innerHTML += `
+                <button onclick="fetchProducts(${currentPage - 1})"
+                        class="px-3 py-1 border rounded hover:bg-gray-100">
+                    이전
+                </button>
+            `;
+        }
+
+        // 페이지 번호 버튼들
+        for (let i = 0; i < data.totalPages; i++) {
+            if (
+                i === 0 || // 첫 페이지
+                i === data.totalPages - 1 || // 마지막 페이지
+                (i >= currentPage - 2 && i <= currentPage + 2) // 현재 페이지 전후 2페이지
+            ) {
+                pagination.innerHTML += `
+                    <button onclick="fetchProducts(${i})"
+                            class="px-3 py-1 border rounded ${currentPage === i ? 'bg-blue-500 text-white' : 'hover:bg-gray-100'}">
+                        ${i + 1}
+                    </button>
+                `;
+            } else if (i === currentPage - 3 || i === currentPage + 3) {
+                pagination.innerHTML += `<span class="px-2">...</span>`;
+            }
+        }
+
+        // 다음 페이지 버튼
+        if (!data.last) {
+            pagination.innerHTML += `
+                <button onclick="fetchProducts(${currentPage + 1})"
+                        class="px-3 py-1 border rounded hover:bg-gray-100">
+                    다음
+                </button>
+            `;
+        }
+    }
+
+    function addOption() {
+        const optionsList = document.getElementById('optionsList');
+        const currentOptions = optionsList.children.length;
+
+        if (currentOptions >= 3) {
+            alert('옵션은 최대 3개까지만 추가할 수 있습니다.');
+            return;
+        }
+
+        const optionId = Date.now();
+        const optionHtml = `
+        <div id="option-${optionId}" class="border p-4 rounded">
+            <div class="flex justify-between items-center mb-3">
+                <h4 class="font-medium">옵션 ${currentOptions + 1}</h4>
+                <button type="button" onclick="removeOption('option-${optionId}')"
+                        class="text-red-500 hover:text-red-700">삭제</button>
+            </div>
+            <div class="grid grid-cols-1 gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">옵션명</label>
+                    <input type="text" class="option-name mt-1 w-full p-2 border rounded">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">옵션 타입</label>
+                    <select class="option-type mt-1 w-full p-2 border rounded" onchange="handleOptionTypeChange(this)">
+                        <option value="INPUT">입력 타입</option>
+                        <option value="SELECT">선택 타입</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">추가 가격</label>
+                    <input type="text" class="option-price mt-1 w-full p-2 border rounded">
+                </div>
+                <!-- 입력 타입일 때 보여줄 UI -->
+                <div class="input-ui">
+                    <label class="block text-sm font-medium text-gray-700">입력 내용</label>
+                    <input type="text" class="option-input mt-1 w-full p-2 border rounded"
+                           placeholder="사용자가 직접 입력할 수 있는 필드입니다">
+                </div>
+                <!-- 선택 타입일 때 보여줄 UI -->
+                <div class="select-ui hidden">
+                    <label class="block text-sm font-medium text-gray-700">선택 옵션</label>
+                    <div class="space-y-2">
+                        <label class="flex items-center">
+                            <input type="checkbox" class="option-value mr-2" value="사이즈 S">
+                            <span>사이즈 S</span>
+                        </label>
+                        <label class="flex items-center">
+                            <input type="checkbox" class="option-value mr-2" value="사이즈 M">
+                            <span>사이즈 M</span>
+                        </label>
+                        <label class="flex items-center">
+                            <input type="checkbox" class="option-value mr-2" value="사이즈 L">
+                            <span>사이즈 L</span>
+                        </label>
+                        <label class="flex items-center">
+                            <input type="checkbox" class="option-value mr-2" value="사이즈 XL">
+                            <span>사이즈 XL</span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+        optionsList.insertAdjacentHTML('beforeend', optionHtml);
+    }
+
+    function handleOptionTypeChange(selectElement) {
+        console.log('select element:', selectElement);
+        // 먼저 option-${optionId} div를 찾기
+        const parentDiv = selectElement.closest('div[id^="option-"]');
+        console.log('parent div:', parentDiv);
+
+        if (!parentDiv) {
+            console.error('부모 div를 찾을 수 없습니다');
+            return;
+        }
+
+        // 그 다음 input-ui와 select-ui를 찾기
+        const inputUI = parentDiv.querySelector('.input-ui');
+        const selectUI = parentDiv.querySelector('.select-ui');
+
+        if (!inputUI || !selectUI) {
+            console.error('UI 요소를 찾을 수 없습니다');
+            return;
+        }
+
+        if (selectElement.value === 'SELECT') {
+            inputUI.classList.add('hidden');
+            selectUI.classList.remove('hidden');
+        } else {
+            inputUI.classList.remove('hidden');
+            selectUI.classList.add('hidden');
+        }
+    }
+
+    async function removeOption(optionId) {
+        const optionElement = document.getElementById(optionId);
+        const productOptionId = optionElement.querySelector('.option-id')?.value;
+
+        // productOptionId가 없으면 새로 추가된 옵션이므로 UI에서만 제거
+        if (!productOptionId) {
+            optionElement.remove();
+            return;
+        }
+
+        if (!confirm('정말 이 옵션을 삭제하시겠습니까?')) {
+            return;
+        }
+
+        const token = localStorage.getItem('token');
+
+        try {
+            const response = await fetch(`/api/v1/products/${editingProductId}/options/${productOptionId}`, {
+                method: 'DELETE',
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            });
+
+            if (response.ok) {
+                optionElement.remove();
+            } else {
+                throw new Error('옵션 삭제에 실패했습니다.');
+            }
+        } catch (error) {
+            console.error('Error:', error);
+            alert(error.message);
+        }
+    }
+
+    function showCreateModal() {
+        editingProductId = null;
+        document.getElementById('modalTitle').textContent = '상품 등록';
+        document.getElementById('productForm').reset();
+        document.getElementById('optionsList').innerHTML = '';
+        document.getElementById('productModal').classList.remove('hidden');
+        // 옵션 섹션 전체를 숨김
+        document.querySelector('.border-t').classList.add('hidden');
+        document.getElementById('productModal').classList.remove('hidden');
+    }
+
+    // 옵션 추가 모달 표시 함수
+    function showOptionsModal(productId) {
+        editingProductId = productId;
+
+        document.getElementById('modalTitle').textContent = '옵션 추가';
+
+        // 상품 관련 필드들 숨기기
+        const productFields = document.querySelectorAll('#productForm > div:not(.border-t)');
+        productFields.forEach(field => field.classList.add('hidden'));
+
+        // 옵션 섹션 초기화 및 표시
+        document.querySelector('.border-t').classList.remove('hidden');
+        document.getElementById('optionsList').innerHTML = '';
+        addOption();  // 기본 옵션 하나 추가
+
+        // 모달 표시
+        document.getElementById('productModal').classList.remove('hidden');
+
+        // 모달 표시
+        document.getElementById('productModal').classList.remove('hidden');
+    }
+
+    function closeModal() {
+        // 모달 숨기기
+        document.getElementById('productModal').classList.add('hidden');
+
+        // 상품 정보 섹션 다시 보이게
+        document.querySelector('.grid.grid-cols-1.md\\:grid-cols-2').classList.remove('hidden');
+        document.querySelector('textarea#productDescription').parentElement.classList.remove('hidden');
+
+        // 초기화
+        editingProductId = null;
+    }
+
+    async function viewOptions(productId) {
+        editingProductId = productId;
+        const token = localStorage.getItem('token');
+
+        try {
+            const response = await fetch(`/api/v1/products/${productId}/options`, {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            });
+
+            if (response.ok) {
+                const options = await response.json();
+                console.log('받아온 옵션 데이터:', options);
+
+                document.getElementById('modalTitle').textContent = '옵션 수정';
+                const productFields = document.querySelectorAll('#productForm > div:not(.border-t)');
+                productFields.forEach(field => field.classList.add('hidden'));
+
+                document.querySelector('.border-t').classList.remove('hidden');
+                document.getElementById('optionsList').innerHTML = '';
+
+                options.forEach(option => {
+                    console.log('현재 옵션:', option); // 각 옵션 데이터 확인
+                    const optionId = Date.now() + Math.random();
+                    const optionHtml = `
+                    <div id="option-${optionId}" class="border p-4 rounded">
+                        <div class="flex justify-between items-center mb-3">
+                            <h4 class="font-medium">옵션 정보</h4>
+                            <button type="button" onclick="removeOption('option-${optionId}')"
+                                    class="text-red-500 hover:text-red-700">삭제</button>
+                        </div>
+                        <div class="grid grid-cols-1 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">옵션명</label>
+                                <input type="text" class="option-name mt-1 w-full p-2 border rounded" value="${option.name}">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">옵션 타입</label>
+                                <select class="option-type mt-1 w-full p-2 border rounded"
+                                        onchange="handleOptionTypeChange(this)">
+                                    <option value="INPUT" ${option.type === 'INPUT' ? 'selected' : ''}>입력 타입</option>
+                                    <option value="SELECT" ${option.type === 'SELECT' ? 'selected' : ''}>선택 타입</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">추가 가격</label>
+                                <input type="text" class="option-price mt-1 w-full p-2 border rounded" value="${option.additionalPrice}">
+                            </div>
+                            <!-- INPUT 타입일 때의 UI -->
+                            <div class="input-ui ${option.type !== 'INPUT' ? 'hidden' : ''}">
+                                <label class="block text-sm font-medium text-gray-700">입력 내용</label>
+                                <input type="text" class="option-input mt-1 w-full p-2 border rounded"
+                                       value="${option.type === 'INPUT' && option.optionValues.length > 0 ? option.optionValues[0] : ''}"
+                                       placeholder="사용자가 직접 입력할 수 있는 필드입니다">
+                            </div>
+                            <!-- SELECT 타입일 때의 UI -->
+                            <div class="select-ui ${option.type !== 'SELECT' ? 'hidden' : ''}">
+                                <label class="block text-sm font-medium text-gray-700">선택 옵션</label>
+                                <div class="space-y-2">
+                                    ${['사이즈 S', '사이즈 M', '사이즈 L', '사이즈 XL'].map(value => `
+                                        <label class="flex items-center">
+                                            <input type="checkbox" class="option-value mr-2" value="${value}"
+                                                   ${option.type === 'SELECT' && option.optionValues.includes(value) ? 'checked' : ''}>
+                                            <span>${value}</span>
+                                        </label>
+                                    `).join('')}
+                                </div>
+                            </div>
+                            <input type="hidden" class="option-id" value="${option.productOptionId}">
+                        </div>
+                    </div>
+                `;
+                    document.getElementById('optionsList').insertAdjacentHTML('beforeend', optionHtml);
+                });
+
+                document.getElementById('productModal').classList.remove('hidden');
+            }
+        } catch (error) {
+            console.error('Error:', error);
+            alert('옵션 정보를 불러오는데 실패했습니다.');
+        }
+    }
+
+    async function editProduct(productId) {
+        editingProductId = productId;
+
+        // 현재 화면에 표시된 상품 데이터 사용
+        const productElement = document.querySelector(`[data-product-id="${productId}"]`);
+        document.getElementById('modalTitle').textContent = '상품 수정';
+        document.getElementById('productName').value = productElement.querySelector('.product-name').textContent;
+        document.getElementById('productDescription').value = productElement.querySelector('.product-description').textContent;
+        document.getElementById('productPrice').value = productElement.querySelector('.product-price').dataset.price;
+        document.getElementById('deliveryFee').value = productElement.querySelector('.product-delivery-fee').dataset.fee;
+
+        // 옵션 섹션 숨기기
+        document.querySelector('.border-t').classList.add('hidden');
+
+        // 모달 표시
+        document.getElementById('productModal').classList.remove('hidden');
+    }
+
+    function addExistingOption(option) {
+        const optionsList = document.getElementById('optionsList');
+        const optionId = Date.now() + Math.random();
+
+        const optionHtml = `
+            <div id="option-${optionId}" class="border p-4 rounded">
+                <div class="flex justify-between items-center mb-3">
+                    <h4 class="font-medium">옵션 정보</h4>
+                    <button type="button" onclick="removeOption('option-${optionId}')"
+                            class="text-red-500 hover:text-red-700">삭제</button>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">옵션명*</label>
+                        <input type="text" class="option-name mt-1 w-full p-2 border rounded"
+                               value="${option.name}" required>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">옵션 타입*</label>
+                        <select class="option-type mt-1 w-full p-2 border rounded" required>
+                            <option value="SINGLE" ${option.optionType === 'SINGLE' ? 'selected' : ''}>단일 선택</option>
+                            <option value="MULTIPLE" ${option.optionType === 'MULTIPLE' ? 'selected' : ''}>다중 선택</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">추가 가격*</label>
+                        <input type="number" class="option-price mt-1 w-full p-2 border rounded"
+                               value="${option.additionalPrice}" required min="0" step="1">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">옵션 값* (쉼표로 구분, 최대 3개)</label>
+                        <input type="text" class="option-values mt-1 w-full p-2 border rounded"
+                               value="${option.optionValues.join(',')}" required>
+                    </div>
+                </div>
+                <input type="hidden" class="option-id" value="${option.productOptionId || ''}">
+            </div>
+        `;
+        optionsList.insertAdjacentHTML('beforeend', optionHtml);
+    }
+
+    async function deleteProduct(productId) {
+        if (!confirm('정말 삭제하시겠습니까?')) return;
+
+        console.log("productId ::" + productId);
+
+        const token = localStorage.getItem('token');
+        try {
+            const response = await fetch(`/api/v1/products/${productId}`, {
+                method: 'DELETE',
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            });
+
+            if (response.ok) {
+                fetchProducts(currentPage);
+            } else {
+                throw new Error('상품 삭제에 실패했습니다.');
+            }
+        } catch (error) {
+            console.error('Error:', error);
+            alert(error.message);
+        }
+    }
+
+    document.getElementById('productForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const token = localStorage.getItem('token');
+        const modalTitle = document.getElementById('modalTitle').textContent;
+
+        try {
+            if (modalTitle === '옵션 추가' || modalTitle === '옵션 수정') {
+                // 옵션 데이터 수집 전 로그
+                console.log('모달 타입:', modalTitle);
+                console.log('수정하려는 상품 ID:', editingProductId);
+
+                const options = Array.from(document.getElementById('optionsList').children).map(optionDiv => {
+                    const optionType = optionDiv.querySelector('.option-type').value;
+                    const productOptionId = optionDiv.querySelector('.option-id')?.value;
+                    const name = optionDiv.querySelector('.option-name').value;
+                    const price = optionDiv.querySelector('.option-price').value;
+                    const checkedValues = Array.from(optionDiv.querySelectorAll('.option-value:checked')).map(cb => cb.value);
+
+                    let optionValues;
+                    if (optionType === 'SELECT') {
+                        optionValues = Array.from(optionDiv.querySelectorAll('.option-value:checked')).map(cb => cb.value);
+                    } else {
+                        const inputValue = optionDiv.querySelector('.option-input').value;
+                        optionValues = inputValue ? [inputValue] : [];
+                    }
+
+                    return {
+                        name: name,
+                        type: optionType === 'SELECT' ? 'SELECT' : 'INPUT',
+                        optionValues: optionValues,
+                        additionalPrice: price || "0",
+                        productOptionId: productOptionId ? Number(productOptionId) : null
+                    };
+                });
+
+                // productOptionId가 있는 것(기존 옵션)과 없는 것(새 옵션)을 분리
+                const updateOptions = options.filter(opt => opt.productOptionId);
+                const createOptions = options.filter(opt => !opt.productOptionId);
+
+                try {
+                    // 기존 옵션 수정 (PATCH 요청)
+                    if (updateOptions.length > 0) {
+                        const updateResponse = await fetch(`/api/v1/products/${editingProductId}/options`, {
+                            method: 'PATCH',
+                            headers: {
+                                'Authorization': `Bearer ${token}`,
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify(updateOptions)
+                        });
+
+                        if (!updateResponse.ok) {
+                            throw new Error('기존 옵션 수정에 실패했습니다.');
+                        }
+                    }
+
+                    // 새 옵션 생성 (POST 요청)
+                    if (createOptions.length > 0) {
+                        const createResponse = await fetch(`/api/v1/products/${editingProductId}/options`, {
+                            method: 'POST',
+                            headers: {
+                                'Authorization': `Bearer ${token}`,
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify(createOptions)
+                        });
+
+                        if (!createResponse.ok) {
+                            throw new Error('새 옵션 생성에 실패했습니다.');
+                        }
+                    }
+
+                    closeModal();
+                    fetchProducts(currentPage);
+                } catch (error) {
+                    console.error('Error:', error);
+                    alert(error.message);
+                }
+            } else {
+                // 기존 상품 등록/수정 로직
+                const productData = {
+                    name: document.getElementById('productName').value,
+                    description: document.getElementById('productDescription').value,
+                    price: Number(document.getElementById('productPrice').value),
+                    deliveryFee: Number(document.getElementById('deliveryFee').value)
+                };
+
+                const response = await fetch(`/api/v1/products${editingProductId ? `/${editingProductId}` : ''}`, {
+                    method: editingProductId ? 'PATCH' : 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(productData)
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.message || '상품 저장에 실패했습니다.');
+                }
+
+                closeModal();
+                fetchProducts(currentPage);
+            }
+        } catch (error) {
+            console.error('Error:', error);
+            alert(error.message);
+        }
+    });
+
+    function logout() {
+        localStorage.removeItem('token');
+        window.location.href = '/login';
+    }
+</script>

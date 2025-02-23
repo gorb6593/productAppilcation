@@ -1,0 +1,74 @@
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>로그인</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <link rel="icon" type="image/x-icon" href="data:image/x-icon;,">
+</head>
+<body class="bg-gray-50">
+<div class="min-h-screen flex items-center justify-center">
+    <div class="max-w-md w-full space-y-8 p-8 bg-white rounded-lg shadow">
+        <h2 class="text-center text-3xl font-bold">로그인</h2>
+        <form id="loginForm" class="space-y-6">
+            <div>
+                <input type="email" id="email"
+                       placeholder="이메일"
+                       class="w-full p-2 border rounded">
+            </div>
+            <div>
+                <input type="password" id="password"
+                       placeholder="비밀번호"
+                       class="w-full p-2 border rounded">
+            </div>
+            <button type="submit"
+                    class="w-full py-2 px-4 bg-blue-500 text-white rounded hover:bg-blue-600">
+                로그인
+            </button>
+        </form>
+        <div class="text-center">
+            <a href="/signup" class="text-blue-500 hover:text-blue-600">회원가입</a>
+        </div>
+    </div>
+</div>
+
+<script>
+    document.getElementById('loginForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+
+        try {
+            const response = await fetch('/api/v1/auth/login', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    email: document.getElementById('email').value,
+                    password: document.getElementById('password').value
+                })
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                localStorage.setItem('token', data.accessToken);
+
+                // products 페이지 요청 시 토큰을 헤더에 포함
+                fetch('/products', {
+                    headers: {
+                        'Authorization': `Bearer ${data.accessToken}`
+                    }
+                }).then(response => {
+                    if (response.ok) {
+                        window.location.href = '/products';
+                    }
+                });
+            } else {
+                alert('로그인에 실패했습니다.');
+            }
+        } catch (error) {
+            console.error('Error:', error);
+            alert('로그인 중 오류가 발생했습니다.');
+        }
+    });
+</script>
+</body>
+</html>
