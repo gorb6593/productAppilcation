@@ -1,6 +1,6 @@
-# Product Service
+# 이해규 
 
-상품 및 상품 옵션을 관리하는 REST API 서비스입니다.
+[Product Service]상품 및 상품 옵션을 관리하는 REST API 서비스입니다.
 
 ## API 목록
 
